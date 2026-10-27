@@ -1,0 +1,24 @@
+[project]
+name = "voice-agent"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fermion-research[mlx]>=0.2.15",
+    "google-genai>=2.33.0",
+    "kokoro>=0.9.4",
+    "mlx-lm>=0.31.3",
+    "numpy>=1.26.4",
+    "pydantic-settings>=2.16.1",
+    "python-dotenv>=1.2.4",
+    "sounddevice>=0.5.6",
+    "soundfile>=0.14.0",
+]
+
+[dependency-groups]
+research = [
+    "librosa>=0.11.0",
+    "torch>=2.2.2",
+    "transformers>=5.0.0",
+]
