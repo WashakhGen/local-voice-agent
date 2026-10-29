@@ -5,9 +5,10 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "en-core-web-sm",
     "fermion-research[mlx]>=0.2.15",
-    "google-genai>=2.33.0",
-    "kokoro>=0.9.4",
+    "misaki[en]>=0.9.4",
+    "mlx-audio>=0.2.7",
     "mlx-lm>=0.31.3",
     "numpy>=1.26.4",
     "pydantic-settings>=2.16.1",
@@ -22,3 +23,6 @@ research = [
     "torch>=2.2.2",
     "transformers>=5.0.0",
 ]
+
+[tool.uv.sources]
+en-core-web-sm = { url = "https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl" }

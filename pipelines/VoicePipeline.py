@@ -1,3 +1,4 @@
+import time
 from dataclasses import dataclass
 
 import numpy as np
@@ -5,7 +6,8 @@ import numpy as np
 from core.config import CONFIGS
 from pipelines.llm import LocalLLM
 from pipelines.stt import PhononSTT
-from pipelines.tts import KokoroTTS
+from pipelines.tts import MLXKokoroTTS
+from utils.audio import Player, load_wav
 from utils.metrics import time_into_log
 
 
@@ -22,15 +24,11 @@ class VoicePipeline:
         self,
         stt: PhononSTT | None = None,
         llm: LocalLLM | None = None,
-        tts: KokoroTTS | None = None,
+        tts: MLXKokoroTTS | None = None,
     ):
         self.stt = stt or PhononSTT()
         self.llm = llm or LocalLLM()
-        self.tts = tts or KokoroTTS(voice=CONFIGS.DEFAULT_VOICE)
-
-    @classmethod
-    def from_pretrained(cls) -> "VoicePipeline":
-        return cls(stt=PhononSTT(), llm=LocalLLM(), tts=KokoroTTS())
+        self.tts = tts or MLXKokoroTTS(voice=CONFIGS.DEFAULT_VOICE)
 
     @property
     def name(self) -> str:
@@ -41,10 +39,17 @@ class VoicePipeline:
         for key, component in (("stt", self.stt), ("llm", self.llm), ("tts", self.tts)):
             with time_into_log(t, key):
                 component.warmup()
+        # one silent end-to-end turn: STT sees a real input length, and all three models run back to back
+        with time_into_log(t, "full_turn"):
+            self(load_wav(CONFIGS.WARMUP_WAV))
+        self.llm.reset()
         return t
 
-    def __call__(self, audio: np.ndarray) -> Turn | None:
+        return t
+
+    def __call__(self, audio: np.ndarray, player: Player | None = None) -> Turn | None:
         t = {"audio_ms": len(audio) / CONFIGS.STT_SR * 1000}
+        t0 = time.perf_counter()
 
         with time_into_log(t, "stt_ms"):
             user_text = self.stt.transcribe(audio)
@@ -52,14 +57,21 @@ class VoicePipeline:
             return None
         t.update(self.stt.last_stats)
 
-        with time_into_log(t, "llm_ms"):
-            reply = self.llm.reply(user_text)
+        chunks, tts_ms = [], 0.0
+        for sentence in self.llm.stream(user_text):
+            t1 = time.perf_counter()
+            chunk = self.tts.synthesize(sentence)
+            tts_ms += (time.perf_counter() - t1) * 1000
+            if not chunks:
+                t["first_audio_ms"] = (time.perf_counter() - t0) * 1000
+            if player:
+                player.put(chunk)
+            chunks.append(chunk)
         t.update(self.llm.last_stats)
+        t["tts_ms"] = tts_ms
+        t["total_ms"] = (time.perf_counter() - t0) * 1000
 
-        with time_into_log(t, "tts_ms"):
-            speech = self.tts.synthesize(reply)
-        t.update(self.tts.last_stats)
-
+        speech = np.concatenate(chunks) if chunks else np.zeros(0, np.float32)
         t["speech_ms"] = len(speech) / self.tts.sample_rate * 1000
-        t["total_ms"] = t["stt_ms"] + t["llm_ms"] + t["tts_ms"]
+        reply = self.llm.history[-1]["content"]
         return Turn(user_text, reply, speech, t)

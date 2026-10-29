@@ -1,3 +1,6 @@
+import queue
+import time
+
 import numpy as np
 import sounddevice as sd
 import soundfile as sf
@@ -30,7 +33,34 @@ def load_wav(path) -> np.ndarray:
     return audio.astype(np.float32)
 
 
-def play(audio: np.ndarray, sample_rate: int) -> None:
-    if len(audio):
-        sd.play(audio, sample_rate)
-        sd.wait()
+class Player:
+    """Non-blocking playback: put() chunks, they play back-to-back."""
+
+    def __init__(self, sample_rate: int):
+        self.q, self.buf = queue.Queue(), np.zeros(0, np.float32)
+        self.stream = sd.OutputStream(
+            samplerate=sample_rate,
+            channels=1,
+            dtype="float32",
+            callback=self._fill,
+            latency="low",
+        )
+        self.stream.start()
+
+    def _fill(self, out, frames, *_):
+        while len(self.buf) < frames and not self.q.empty():
+            self.buf = np.concatenate([self.buf, self.q.get_nowait()])
+        n = min(frames, len(self.buf))
+        out[:n, 0], out[n:, 0] = self.buf[:n], 0
+        self.buf = self.buf[n:]
+
+    def put(self, audio: np.ndarray) -> None:
+        self.q.put(audio.astype(np.float32))
+
+    def wait(self) -> None:
+        while not self.q.empty() or len(self.buf):
+            time.sleep(0.02)
+
+    def stop(self) -> None:  # barge-in later: drop everything queued
+        self.q = queue.Queue()
+        self.buf = np.zeros(0, np.float32)
