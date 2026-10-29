@@ -9,8 +9,6 @@ class PhononSTT:
     name = "phonon"
 
     def __init__(self, model: str = CONFIGS.STT_MODEL):
-        # `model` is a local unpacked dir or a catalog id like "phonon-2.5-en".
-        # Loads weights onto the MLX engine once; reused for every turn.
         self.speech = fermion.load_speech(model)
         self.last_stats = {}
 

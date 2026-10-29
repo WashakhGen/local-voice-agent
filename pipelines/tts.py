@@ -1,3 +1,11 @@
+import warnings
+
+# Kokoro 0.9.4 (latest) calls PyTorch APIs deprecated in torch 2.x; harmless at inference.
+warnings.filterwarnings("ignore", message="dropout option adds dropout")
+warnings.filterwarnings("ignore", message=".*weight_norm.*is deprecated")
+warnings.filterwarnings("ignore", message=".*torch.jit.script.*is deprecated")
+
+
 import numpy as np
 from huggingface_hub import hf_hub_download
 from kokoro import KModel, KPipeline
@@ -14,14 +22,18 @@ class KokoroTTS:
         voice: str = "af_heart",
         repo_id: str = CONFIGS.TTS_REPO,
         cache_dir: str = CONFIGS.HF_CACHE_DIR,
+        device: str = "mps",
     ):
-        # Download explicitly into cache_dir; KPipeline would otherwise use the global HF cache.
-        config = hf_hub_download(repo_id, "config.json", cache_dir=cache_dir)
-        weights = hf_hub_download(repo_id, "kokoro-v1_0.pth", cache_dir=cache_dir)
-        self.voice = hf_hub_download(repo_id, f"voices/{voice}.pt", cache_dir=cache_dir)
-        model = KModel(repo_id=repo_id, config=config, model=weights).eval()
+        self.voice, model = self.download_model(repo_id, cache_dir, device, voice)
         self.pipeline = KPipeline(lang_code="a", repo_id=repo_id, model=model)
         self.last_stats = {}
+
+    def download_model(self, repo_id, cache_dir, device, voice):
+        config = hf_hub_download(repo_id, "config.json", cache_dir=cache_dir)
+        weights = hf_hub_download(repo_id, "kokoro-v1_0.pth", cache_dir=cache_dir)
+        voice = hf_hub_download(repo_id, f"voices/{voice}.pt", cache_dir=cache_dir)
+        model = KModel(repo_id=repo_id, config=config, model=weights).to(device).eval()
+        return voice, model
 
     def synthesize(self, text: str) -> np.ndarray:
         chunks = [
@@ -33,4 +45,10 @@ class KokoroTTS:
         return np.concatenate(chunks) if chunks else np.zeros(0, np.float32)
 
     def warmup(self) -> None:
-        self.synthesize("Hello there.")
+        # MPS compiles kernels per input shape; warm a few lengths.
+        for text in (
+            "Hello there.",
+            "The capital of France is Paris.",
+            "This is a longer warmup sentence so the GPU sees a bigger input shape.",
+        ):
+            self.synthesize(text)
