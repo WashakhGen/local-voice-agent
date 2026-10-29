@@ -22,8 +22,9 @@ class Configs(BaseSettings):
     DEFAULT_VOICE: str = "af_heart"
 
     SYSTEM_PROMPT: str = (
-        "You are a helpful voice assistant. Your replies are spoken aloud, so answer in "
-        "one to three short, natural sentences. Never use markdown, lists, emoji, or symbols."
+        "You are a helpful voice assistant. Your replies are spoken aloud. "
+        "Answer in at most two short sentences. Write numbers and units as words. "
+        "Never use markdown, lists, emoji, or symbols."
     )
 
 
